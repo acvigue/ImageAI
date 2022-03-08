@@ -10,6 +10,7 @@ import os
 
 app = Flask(__name__)
 
+
 creds = json.loads(os.environ.get('GOOGLE_APPLICATION_CREDENTIALS'))
 with open('gcreds.json', 'w') as fp:
     json.dump(creds, fp)
@@ -91,6 +92,14 @@ def annotateImage():
     try:
         content = request.get_json(force=True)
         url = content["url"]
+        response = requests.get(url)
+
+        file = open("image.jpg", "wb")
+        file.write(response.content)
+        file.close()
+
+        image = cv2.imread("./image.jpg")
+        height, width, channels = image.shape
         
         from google.cloud import vision
         client = vision.ImageAnnotatorClient.from_service_account_json("gcreds.json")
@@ -104,6 +113,7 @@ def annotateImage():
         }
 
         response = client.annotate_image(requestx)
+        print(response)
         faces = response.face_annotations
         if "error" in response:
             resp = {
@@ -117,7 +127,11 @@ def annotateImage():
         resp = {
             "error": False,
             "facesCount": len(faces),
-            "faces": []
+            "faces": [],
+            "image": {
+                "width": width,
+                "height": height
+            }
         }
 
         for face in faces:
