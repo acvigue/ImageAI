@@ -23,7 +23,7 @@ def hello_world():
 def extractImages():
     if "X-Api-Signature" not in request.headers:
         abort(403)
-    signature = request.headers.get("X-Api-Signature", "").split("=")[1]
+    signature = request.headers.get("X-Api-Signature", "")
     # Generate our own signature based on the request payload
     secret = os.environ.get('APP_SECRET', '').encode("utf-8")
     mac = hmac.new(secret, msg=request.data, digestmod=sha1)
