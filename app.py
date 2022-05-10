@@ -104,16 +104,11 @@ def annotateImage():
         from google.cloud import vision
         client = vision.ImageAnnotatorClient.from_service_account_json("gcreds.json")
 
-        requestx = {
-            "image": {
-                "source": {
-                    "image_uri": url
-                }
-            }
-        }
+        image = vision.Image()
+        image.source.image_uri = url
 
-        response = client.annotate_image(requestx)
-        print(response)
+        response = client.face_detection(image=image)
+        
         faces = response.face_annotations
         if "error" in response:
             resp = {
