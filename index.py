@@ -1,4 +1,3 @@
-import re
 import numpy as np
 import cv2 as cv2
 import requests
@@ -9,7 +8,6 @@ import os
 from sanic import Sanic, Forbidden, Unauthorized
 from sanic.response import json
 import boto3
-import base64
 
 app = Sanic(name="image-annotation-server")
 
@@ -111,7 +109,6 @@ async def annotateImage(request, path=""):
         url = content["url"]
         response = requests.get(url)
 
-        encodedImage = base64.b64encode(response.content)
         nparr = np.frombuffer(response.content, np.uint8)
         image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
 
