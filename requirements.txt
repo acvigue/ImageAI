@@ -1,8 +1,2 @@
-decorator==4.4.2
-filterpy==1.4.5
 sanic==19.6.0
-gast==0.4.0
-numpy==1.22.0
-opencv-python-headless==4.5.5.62
-ply==3.11
-requests==2.26.0
+numpy==1.24.2
