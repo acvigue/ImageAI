@@ -8,16 +8,22 @@ from hashlib import sha1
 import json
 import os
 
+from sanic import Sanic
+from sanic.response import json
+app = Sanic()
+ 
+ 
+@app.route('/')
+@app.route('/<path:path>')
+async def index(request, path=""):
+    return json({'hello': path})
+
 app = Flask(__name__)
 
 
 creds = json.loads(os.environ.get('GOOGLE_APPLICATION_CREDENTIALS'))
 with open('gcreds.json', 'w') as fp:
     json.dump(creds, fp)
-
-@app.route("/")
-def hello_world():
-    return "<p>Hello, World!</p>"
 
 @app.route("/api/extractImages", methods=["POST"])
 def extractImages():
