@@ -13,13 +13,7 @@ import base64
 
 app = Sanic(name="image-annotation-server")
 
-keyID = "REDACTED"
-keySecret = "REDACTED"
-
-session = boto3.Session(
-    aws_access_key_id=keyID,
-    aws_secret_access_key=keySecret,
-)
+session = boto3.Session()
 
 def reshape_arr(a, n): # n is number of consecutive adjacent items you want to compare for averaging
     hold = len(a)%n
