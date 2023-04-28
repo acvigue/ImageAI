@@ -12,4 +12,4 @@ COPY . .
 
 EXPOSE 8000
 
-CMD [ "python3", "index.py"]
+CMD [ "python3", "-m" , "sanic", "index:app", "-H", "0.0.0.0"]
