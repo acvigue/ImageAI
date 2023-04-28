@@ -127,10 +127,10 @@ async def annotateImage(request, path=""):
 
         for face in response['FaceDetails']:
             box = face['BoundingBox']
-            x = int(box['Left'] * image.shape[1])
-            y = int(box['Top'] * image.shape[0])
-            w = int(box['Width'] * image.shape[1])
-            h = int(box['Height'] * image.shape[0])
+            x = round(int(box['Left'] * image.shape[1]))
+            y = round(int(box['Top'] * image.shape[0]))
+            w = round(int(box['Width'] * image.shape[1]))
+            h = round(int(box['Height'] * image.shape[0]))
 
             face = {
                 "x": x,
@@ -138,8 +138,6 @@ async def annotateImage(request, path=""):
                 "w": w,
                 "h": h
             }
-
-            cv2.rectangle(image, (x,y), (x+w, y+h), (0,0,255), 2)
 
             resp["faces"].append(face)
 
