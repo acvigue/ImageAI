@@ -1,4 +1,4 @@
-boto3==1.28.68
+boto3==1.28.69
 opencv-python-headless==4.8.1.78
 numpy==1.24.2
 sanic==23.6.0
