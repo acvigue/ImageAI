@@ -1,5 +1,5 @@
 boto3==1.28.69
 opencv-python-headless==4.8.1.78
-numpy==1.24.2
+numpy==1.26.1
 sanic==23.6.0
 requests==2.31.0
