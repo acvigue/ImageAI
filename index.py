@@ -5,6 +5,7 @@ import hmac
 from hashlib import sha1
 import json
 import os
+from scipy.signal import find_peaks
 from sanic import Sanic, Forbidden, Unauthorized
 from sanic.response import json
 import boto3
@@ -12,31 +13,6 @@ import boto3
 app = Sanic(name="image-annotation-server")
 
 session = boto3.Session()
-
-def reshape_arr(a, n): # n is number of consecutive adjacent items you want to compare for averaging
-    hold = len(a)%n
-    if hold != 0:
-        container = a[-hold:] #numbers that do not fit on the array will be excluded for averaging
-        a = a[:-hold].reshape(-1,n)
-    else:
-        a = a.reshape(-1,n)
-        container = None
-    return a, container
-def get_mean(a, close): # close = how close adjacent numbers need to be, in order to be averaged together
-    my_list=[]
-    for i in range(len(a)):
-        if a[i].max()-a[i].min() > close:
-            for j in range(len(a[i])):
-                my_list.append(a[i][j])
-        else:
-            my_list.append(a[i].mean())
-    return my_list  
-def final_list(a, c): # add any elemts held in the container to the final list
-    if c is not None:
-        c = c.tolist()
-        for i in range(len(c)):
-            a.append(c[i])
-    return a
 
 @app.route("/api/extractImages", methods=["POST"])
 async def extractImages(request, path=""):
@@ -55,44 +31,37 @@ async def extractImages(request, path=""):
     response = requests.get(url)
 
     nparr = np.frombuffer(response.content, np.uint8)
-    image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
 
-    gray = cv2.cvtColor(image,cv2.COLOR_BGR2GRAY)
-    kernel_size = 3
-    blur_gray = cv2.GaussianBlur(gray,(kernel_size, kernel_size),0)
+    blurred = cv2.bilateralFilter(img, 10, 40, 50)
+    edges = cv2.Canny(blurred, 0, 255)
+    
+    h_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (7,1))
+    
+    h_morphed = cv2.morphologyEx(edges, cv2.MORPH_OPEN, h_kernel, iterations=2)
+    h_morphed = cv2.dilate(h_morphed, None)
+    
+    h_acc = cv2.reduce(h_morphed, 1, cv2.REDUCE_SUM, dtype=cv2.CV_32S)
+    
+    h_peaks, h_props = find_peaks(h_acc[:,0], 0.50*max(h_acc[:,0]), None, 100)
+    
+    last_peak = 0
+    peaks = [0]
 
-    laplacian = cv2.Laplacian(blur_gray,cv2.CV_8UC1, blur_gray, kernel_size)
-
-    lsd = cv2.createLineSegmentDetector(0)
-    lines_lsd = lsd.detect(laplacian)[0] #Position 0 of the returned tuple are the detected lines
-
-    y_pos = [0]
-
-    for line in lines_lsd:
-        for x1,y1,x2,y2 in line:
-            angle = np.arctan2(y2 - y1, x2 - x1) * 180.0 / np.pi
-            if abs(angle) < 0.2 and abs(abs(x2-x1)) > 300:
-                cv2.line(image, (int(x1), int(y1)), (int(x2), int(y2)), (0,0,255), 3)
-                thispos = np.average([int(y1),int(y2)]);
-                add = True
-                for pos in y_pos:
-                    if(abs(thispos-pos) < 60) :
-                        add = False
-                        break
-
-                if add:
-                    y_pos.append(np.average([int(y1),int(y2)]))
-
-    y_pos.sort()
+    for peak_index in h_peaks:
+        if peak_index - last_peak > (img.shape[1] / 2):
+            peaks.append(int(peak_index))
+            last_peak = peak_index
 
     resp = {
-        "width": image.shape[1],
-        "lines_found_at": y_pos
+        "error": False,
+        "width": img.shape[1],
+        "lines_found_at": peaks
     }
 
     return json(resp)
 
-@app.route("/api/annotateImage", methods=["POST"])
+@app.route("/api/extractFaces", methods=["POST"])
 async def annotateImage(request, path=""):
     if "X-Api-Signature" not in request.headers:
         raise Forbidden()
@@ -149,6 +118,35 @@ async def annotateImage(request, path=""):
         }
 
         return json(resp)
+
+@app.route("/api/imageOrientation", methods=["POST"])
+async def imageOrientation(request, path=""):
+    if "X-Api-Signature" not in request.headers:
+        raise Forbidden()
+    signature = request.headers.get("X-Api-Signature", "")
+    #Generate our own signature based on the request payload
+    secret = os.environ.get('APP_SECRET', '').encode("utf-8")
+    mac = hmac.new(secret, msg=request.body, digestmod=sha1)
+    #Ensure the two signatures match
+    if not str(mac.hexdigest()) == str(signature):
+        raise Unauthorized()
+
+    content = request.json
+    url = content["url"]
+    response = requests.get(url)
+
+    nparr = np.frombuffer(response.content, np.uint8)
+    img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+    resp = {
+        "error": False,
+        "image": {
+            "width": img.shape[1],
+            "height": img.shape[0]
+        }
+    }
+
+    return json(resp)
 
 if __name__ == '__main__':
     app.run(host="0.0.0.0", port=8000)

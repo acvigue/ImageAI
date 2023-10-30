@@ -3,3 +3,4 @@ opencv-python-headless==4.7.0.72
 numpy==1.24.2
 sanic==23.3.0
 requests==2.31.0
+scipy==1.11.3
