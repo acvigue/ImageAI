@@ -1,5 +1,4 @@
-ARG PYTHON_VERSION="3.11.3"
-FROM python:${PYTHON_VERSION}-slim-buster
+FROM mcr.microsoft.com/playwright/python:latest-arm64
 
 LABEL mantainer="Aiden Vigue <aiden@vigue.me>"
 
