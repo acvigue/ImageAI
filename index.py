@@ -1,3 +1,4 @@
+import time
 import numpy as np
 import cv2 as cv2
 import requests
@@ -62,7 +63,8 @@ async def googleSearch(request, path=""):
         extra_params += "&tbm=isch&tbs=isz:l"
         images = True
 
-    googleURL = "https://google.com/search?q={}&safe=off&cr=countryUS{}".format(urllib.parse.quote_plus(query), extra_params)
+    googleURL = "https://google.com/search?q={}&safe=off&cr=countryUS{}".format(
+        urllib.parse.quote_plus(query), extra_params)
 
     async with async_playwright() as p:
         links = []
@@ -70,6 +72,12 @@ async def googleSearch(request, path=""):
             browser = await p.firefox.launch()
             page = await browser.new_page()
             await page.goto(googleURL)
+            
+            title = await page.title()
+            if title == "Before you continue":
+                await page.get_by_role("button", name="Accept all").click()
+                await page.wait_for_load_state('domcontentloaded')
+
             if images is False:
                 elements = await page.locator(".MjjYud a[jsname='UWckNb']").all()
                 for element in elements:
@@ -84,13 +92,17 @@ async def googleSearch(request, path=""):
                 elements = await page.locator("div[jsname='N9Xkfe']").all()
                 i = 0
                 for element in elements:
-                    if i > 5:
+                    if i > 3:
                         break
-                    await element.click()
-                    image = await page.locator("img[jsname='kn3ccd']").get_attribute("src")
-                    if image is not None:
-                        links.append({"url": image, "title": "image"})
-                    i = i+1
+                    await element.click(timeout=2000)
+                    try:
+                        image = await page.locator("img[jsname='kn3ccd']").get_attribute("src", timeout=3000)
+                        if image is not None:
+                            links.append({"url": image, "title": "image"})
+                            i = i+1
+                    except Exception as e:
+                        print('skipping image')
+                    
         finally:
             await browser.close()
 
@@ -207,7 +219,7 @@ async def annotateImage(request, path=""):
 @authorized()
 async def imageOrientation(request, path=""):
     content = request.json
-    
+
     if "url" not in content:
         return json({"status": "bad_request"}, 400)
     url = content["url"]
@@ -227,4 +239,4 @@ async def imageOrientation(request, path=""):
     return json(resp)
 
 if __name__ == '__main__':
-    app.run(host="0.0.0.0", port=8000, access_log=True, workers=4)
+    app.run(host="0.0.0.0", port=8000, access_log=True)
