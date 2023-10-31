@@ -8,7 +8,7 @@ from json import dumps, loads
 import os
 from scipy.signal import find_peaks
 from sanic import Sanic
-from sanic.response import json
+from sanic.response import json, redirect
 from sanic.log import logger
 import boto3
 import urllib.parse
@@ -16,10 +16,10 @@ from functools import wraps
 from bs4 import BeautifulSoup
 
 app = Sanic(name="image-annotation-server")
+b3 = boto3.Session()
+session = requests.session()
 
-session = boto3.Session()
-
-
+#HMAC decorator
 def authorized():
     def decorator(f):
         @wraps(f)
@@ -41,6 +41,10 @@ def authorized():
         return decorated_function
     return decorator
 
+#dirty knees!
+@app.route("/", methods=["GET"])
+async def index(request, path=""):
+    return redirect("https://www.youtube.com/watch?v=FfnQemkjPjM")
 
 @app.route("/api/googleSearch", methods=["POST"])
 @authorized()
@@ -63,28 +67,33 @@ async def googleSearch(request, path=""):
         extra_params += "&tbm=isch&tbs=isz:l"
         images = True
 
+    logger.info('searching for "{}" (images {})'.format(query, images))
+
     googleURL = "https://google.com/search?q={}&safe=off&cr=countryUS{}".format(
         urllib.parse.quote_plus(query), extra_params)
 
+    # we are not a robot
     headers = {
         'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
         'Accept-Language': 'en-US,en;q=0.9',
     }
 
-    # soup
     req = None
-    if images is False:
-        req = requests.get(googleURL, headers=headers,
-                           cookies={"CONSENT": "PENDING+690"})
-    else:
-        headers["Content-Type"] = "application/x-www-form-urlencoded"
-        reqData = "gl=DE&m=0&app=0&pc=irp&continue={}&x=6&bl=boq_identityfrontenduiserver_20231024.06_p0&hl=en-US&src=1&cm=2&set_sc=true&set_eom=false&set_aps=true".format(
-            urllib.parse.quote_plus(googleURL))
-        req = requests.post("https://consent.google.com/save",
-                            reqData, headers=headers)
+    req = session.get(googleURL, headers=headers)
 
+    # Check if we had encountered the consent popup, if so, deal w/ it
+    if "<title>Before you continue</title>" in req.text:
+        logger.warn('Encountered consent page')
+        headers["Content-Type"] = "application/x-www-form-urlencoded"
+        reqData = """gl=DE&m=0&app=0&pc=irp&continue={}&x=6&bl=boq_identityfrontenduiserver_20231024.06_p0&hl=en-US&src=1&cm=2&set_sc=true&set_eom=false&set_aps=true""".format(
+            urllib.parse.quote_plus(googleURL))
+        req = session.post("https://consent.google.com/save",
+                           reqData, headers=headers)
+        logger.info('Consent cookies generated and saved to session')
     resp = req.text
+
+    # soup is now good
     bs = BeautifulSoup(resp, features="lxml")
 
     links = []
@@ -117,6 +126,8 @@ async def googleSearch(request, path=""):
         for img in full_res_images:
             links.append({"url": img, "title": ""})
 
+    logger.info("Got {} results".format(len(links)))
+
     resp = {
         "error": False,
         "links": links[0:10]
@@ -133,6 +144,8 @@ async def extractImages(request, path=""):
     if "url" not in content:
         return json({"status": "bad_request"}, 400)
     url = content["url"]
+
+    logger.info('Extracting images from {}'.format(url))
 
     response = requests.get(url)
 
@@ -160,6 +173,8 @@ async def extractImages(request, path=""):
             peaks.append(int(peak_index))
             last_peak = peak_index
 
+    logger.info("Found {} splits".format(len(peaks) - 1))
+
     resp = {
         "error": False,
         "image": {
@@ -182,12 +197,14 @@ async def annotateImage(request, path=""):
             return json({"status": "bad_request"}, 400)
         url = content["url"]
 
+        logger.info('Extracting faces from {}'.format(url))
+
         response = requests.get(url)
 
         nparr = np.frombuffer(response.content, np.uint8)
         image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
 
-        client = session.client('rekognition', region_name='us-east-1')
+        client = b3.client('rekognition', region_name='us-east-1')
         response = client.detect_faces(
             Image={'Bytes': response.content}, Attributes=['DEFAULT'])
 
@@ -216,6 +233,8 @@ async def annotateImage(request, path=""):
 
             resp["faces"].append(face)
 
+        logger.info("Located {} faces".format(len(resp["faces"])))
+
         return json(resp)
     except Exception as e:
         resp = {
@@ -234,6 +253,9 @@ async def imageOrientation(request, path=""):
     if "url" not in content:
         return json({"status": "bad_request"}, 400)
     url = content["url"]
+
+    logger.info('Getting dimensions of {}'.format(url))
+
     response = requests.get(url)
 
     nparr = np.frombuffer(response.content, np.uint8)
@@ -246,6 +268,8 @@ async def imageOrientation(request, path=""):
             "height": img.shape[0]
         }
     }
+
+    logger.info("Image is {}x{}".format(img.shape[1], img.shape[0]))
 
     return json(resp)
 
