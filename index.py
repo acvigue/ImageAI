@@ -14,15 +14,16 @@ app = Sanic(name="image-annotation-server")
 
 session = boto3.Session()
 
+
 @app.route("/api/extractImages", methods=["POST"])
 async def extractImages(request, path=""):
     if "X-Api-Signature" not in request.headers:
         raise Forbidden()
     signature = request.headers.get("X-Api-Signature", "")
-    #Generate our own signature based on the request payload
+    # Generate our own signature based on the request payload
     secret = os.environ.get('APP_SECRET', '').encode("utf-8")
     mac = hmac.new(secret, msg=request.body, digestmod=sha1)
-    #Ensure the two signatures match
+    # Ensure the two signatures match
     if not str(mac.hexdigest()) == str(signature):
         raise Unauthorized()
 
@@ -35,16 +36,17 @@ async def extractImages(request, path=""):
 
     blurred = cv2.bilateralFilter(img, 10, 40, 50)
     edges = cv2.Canny(blurred, 0, 255)
-    
-    h_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (7,1))
-    
+
+    h_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (7, 1))
+
     h_morphed = cv2.morphologyEx(edges, cv2.MORPH_OPEN, h_kernel, iterations=2)
     h_morphed = cv2.dilate(h_morphed, None)
-    
+
     h_acc = cv2.reduce(h_morphed, 1, cv2.REDUCE_SUM, dtype=cv2.CV_32S)
-    
-    h_peaks, h_props = find_peaks(h_acc[:,0], 0.50*max(h_acc[:,0]), None, 100)
-    
+
+    h_peaks, h_props = find_peaks(
+        h_acc[:, 0], 0.50*max(h_acc[:, 0]), None, 100)
+
     last_peak = 0
     peaks = [0]
 
@@ -55,24 +57,28 @@ async def extractImages(request, path=""):
 
     resp = {
         "error": False,
-        "width": img.shape[1],
-        "lines_found_at": peaks
+        "image": {
+            "width": img.shape[1],
+            "height": img.shape[0]
+        },
+        "splits": peaks
     }
 
     return json(resp)
+
 
 @app.route("/api/extractFaces", methods=["POST"])
 async def annotateImage(request, path=""):
     if "X-Api-Signature" not in request.headers:
         raise Forbidden()
     signature = request.headers.get("X-Api-Signature", "")
-    #Generate our own signature based on the request payload
+    # Generate our own signature based on the request payload
     secret = os.environ.get('APP_SECRET', '').encode("utf-8")
     mac = hmac.new(secret, msg=request.body, digestmod=sha1)
-    #Ensure the two signatures match
+    # Ensure the two signatures match
     if not str(mac.hexdigest()) == str(signature):
         raise Unauthorized()
-        
+
     try:
         content = request.json
         url = content["url"]
@@ -82,11 +88,11 @@ async def annotateImage(request, path=""):
         image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
 
         client = session.client('rekognition', region_name='us-east-1')
-        response = client.detect_faces(Image={'Bytes': response.content}, Attributes=['DEFAULT'])
+        response = client.detect_faces(
+            Image={'Bytes': response.content}, Attributes=['DEFAULT'])
 
         resp = {
             "error": False,
-            "facesCount": len(response['FaceDetails']),
             "faces": [],
             "image": {
                 "width": image.shape[1],
@@ -119,15 +125,16 @@ async def annotateImage(request, path=""):
 
         return json(resp)
 
+
 @app.route("/api/imageOrientation", methods=["POST"])
 async def imageOrientation(request, path=""):
     if "X-Api-Signature" not in request.headers:
         raise Forbidden()
     signature = request.headers.get("X-Api-Signature", "")
-    #Generate our own signature based on the request payload
+    # Generate our own signature based on the request payload
     secret = os.environ.get('APP_SECRET', '').encode("utf-8")
     mac = hmac.new(secret, msg=request.body, digestmod=sha1)
-    #Ensure the two signatures match
+    # Ensure the two signatures match
     if not str(mac.hexdigest()) == str(signature):
         raise Unauthorized()
 
