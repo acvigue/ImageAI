@@ -69,13 +69,22 @@ async def googleSearch(request, path=""):
     headers = {
         'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9'
+        'Accept-Language': 'en-US,en;q=0.9',
     }
 
     # soup
-    req = requests.get(googleURL, headers=headers)
-    resp = req.text
+    req = None
+    if images is False:
+        req = requests.get(googleURL, headers=headers,
+                           cookies={"CONSENT": "PENDING+690"})
+    else:
+        headers["Content-Type"] = "application/x-www-form-urlencoded"
+        reqData = "gl=DE&m=0&app=0&pc=irp&continue={}&x=6&bl=boq_identityfrontenduiserver_20231024.06_p0&hl=en-US&src=1&cm=2&set_sc=true&set_eom=false&set_aps=true".format(
+            urllib.parse.quote_plus(googleURL))
+        req = requests.post("https://consent.google.com/save",
+                            reqData, headers=headers)
 
+    resp = req.text
     bs = BeautifulSoup(resp, features="lxml")
 
     links = []
