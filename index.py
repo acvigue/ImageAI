@@ -6,27 +6,80 @@ from hashlib import sha1
 import json
 import os
 from scipy.signal import find_peaks
-from sanic import Sanic, Forbidden, Unauthorized
+from sanic import Sanic
 from sanic.response import json
 import boto3
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+import urllib.parse
+from functools import wraps
 
 app = Sanic(name="image-annotation-server")
 
 session = boto3.Session()
 
 
-@app.route("/api/extractImages", methods=["POST"])
-async def extractImages(request, path=""):
-    if "X-Api-Signature" not in request.headers:
-        raise Forbidden()
-    signature = request.headers.get("X-Api-Signature", "")
-    # Generate our own signature based on the request payload
-    secret = os.environ.get('APP_SECRET', '').encode("utf-8")
-    mac = hmac.new(secret, msg=request.body, digestmod=sha1)
-    # Ensure the two signatures match
-    if not str(mac.hexdigest()) == str(signature):
-        raise Unauthorized()
+def authorized():
+    def decorator(f):
+        @wraps(f)
+        async def decorated_function(request, *args, **kwargs):
+            if "X-Api-Signature" not in request.headers:
+                return json({"status": "forbidden"}, 401)
+            signature = request.headers.get("X-Api-Signature", "")
+            # Generate our own signature based on the request payload
+            secret = os.environ.get('APP_SECRET', '').encode("utf-8")
+            mac = hmac.new(secret, msg=request.body, digestmod=sha1)
+            # Ensure the two signatures match
+            if not str(mac.hexdigest()) == str(signature):
+                return json({"status": "not_authorized"}, 403)
 
+            response = await f(request, *args, **kwargs)
+            return response
+        return decorated_function
+    return decorator
+
+@app.route("/api/googleSearch", methods=["POST"])
+@authorized()
+async def googleSearch(request, path=""):
+    content = request.json
+    query = content["query"]
+    isch = content["extra_params"]
+
+    option = webdriver.ChromeOptions()
+    option.add_argument("window-size=1280,800")
+    option.add_argument(
+        "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/74.0.3729.169 Safari/537.36")
+
+    driver = webdriver.Remote(
+        command_executor=os.environ.get('GRID_HOST', ''), options=option)
+
+    links = []
+    try:
+        driver.get(
+            "https://google.com/search?q={}&safe=images&cr=countryUS{}".format(urllib.parse.quote_plus(query), isch))
+        elements = driver.find_elements(
+            By.CSS_SELECTOR, ".MjjYud a[jsname='UWckNb']")
+        for element in elements:
+            link = element.get_attribute("href")
+            if link is not None:
+                if "/url?sa=t" in link:
+                    link = link.split("&url=")[1].split("&")[0]
+                    link = urllib.parse.unquote_plus(link)
+                links.append(link)
+    finally:
+        driver.quit()
+
+    resp = {
+        "error": False,
+        "links": links
+    }
+
+    return json(resp)
+
+
+@app.route("/api/extractImages", methods=["POST"])
+@authorized()
+async def extractImages(request, path=""):
     content = request.json
     url = content["url"]
     response = requests.get(url)
@@ -68,17 +121,8 @@ async def extractImages(request, path=""):
 
 
 @app.route("/api/extractFaces", methods=["POST"])
+@authorized()
 async def annotateImage(request, path=""):
-    if "X-Api-Signature" not in request.headers:
-        raise Forbidden()
-    signature = request.headers.get("X-Api-Signature", "")
-    # Generate our own signature based on the request payload
-    secret = os.environ.get('APP_SECRET', '').encode("utf-8")
-    mac = hmac.new(secret, msg=request.body, digestmod=sha1)
-    # Ensure the two signatures match
-    if not str(mac.hexdigest()) == str(signature):
-        raise Unauthorized()
-
     try:
         content = request.json
         url = content["url"]
@@ -127,17 +171,8 @@ async def annotateImage(request, path=""):
 
 
 @app.route("/api/imageOrientation", methods=["POST"])
+@authorized()
 async def imageOrientation(request, path=""):
-    if "X-Api-Signature" not in request.headers:
-        raise Forbidden()
-    signature = request.headers.get("X-Api-Signature", "")
-    # Generate our own signature based on the request payload
-    secret = os.environ.get('APP_SECRET', '').encode("utf-8")
-    mac = hmac.new(secret, msg=request.body, digestmod=sha1)
-    # Ensure the two signatures match
-    if not str(mac.hexdigest()) == str(signature):
-        raise Unauthorized()
-
     content = request.json
     url = content["url"]
     response = requests.get(url)
