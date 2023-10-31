@@ -70,17 +70,16 @@ async def googleSearch(request, path=""):
             browser = await p.firefox.launch()
             page = await browser.new_page()
             await page.goto(googleURL)
-            print(await page.title())
             if images is False:
                 elements = await page.locator(".MjjYud a[jsname='UWckNb']").all()
                 for element in elements:
                     link = await element.get_attribute("href")
-                    print(link)
+                    title = await element.locator("h3").text_content()
                     if link is not None:
                         if "/url?sa=t" in link:
                             link = link.split("&url=")[1].split("&")[0]
                             link = urllib.parse.unquote_plus(link)
-                        links.append(link)
+                        links.append({"url": link, "title": title})
             else:
                 elements = await page.locator("div[jsname='N9Xkfe']").all()
                 i = 0
@@ -90,7 +89,7 @@ async def googleSearch(request, path=""):
                     await element.click()
                     image = await page.locator("img[jsname='kn3ccd']").get_attribute("src")
                     if image is not None:
-                        links.append(image)
+                        links.append({"url": image, "title": "image"})
                     i = i+1
         finally:
             await browser.close()
