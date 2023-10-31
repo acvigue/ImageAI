@@ -1,10 +1,10 @@
-import time
+import re
 import numpy as np
 import cv2 as cv2
 import requests
 import hmac
 from hashlib import sha1
-import json
+from json import dumps, loads
 import os
 from scipy.signal import find_peaks
 from sanic import Sanic
@@ -13,7 +13,7 @@ from sanic.log import logger
 import boto3
 import urllib.parse
 from functools import wraps
-from playwright.async_api import async_playwright
+from bs4 import BeautifulSoup
 
 app = Sanic(name="image-annotation-server")
 
@@ -66,52 +66,54 @@ async def googleSearch(request, path=""):
     googleURL = "https://google.com/search?q={}&safe=off&cr=countryUS{}".format(
         urllib.parse.quote_plus(query), extra_params)
 
-    async with async_playwright() as p:
-        links = []
-        try:
-            browser = await p.firefox.launch()
-            page = await browser.new_page()
-            await page.goto(googleURL)
-            
-            title = await page.title()
-            if title == "Before you continue":
-                await page.get_by_role("button", name="Accept all").click()
-                await page.wait_for_load_state('domcontentloaded')
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9'
+    }
 
-            if images is False:
-                elements = await page.locator(".MjjYud a[jsname='UWckNb']").all()
-                for element in elements:
-                    link = await element.get_attribute("href")
-                    title = await element.locator("h3").text_content()
-                    if link is not None:
-                        if "/url?sa=t" in link:
-                            link = link.split("&url=")[1].split("&")[0]
-                            link = urllib.parse.unquote_plus(link)
-                        links.append({"url": link, "title": title})
-            else:
-                elements = await page.locator("div[jsname='N9Xkfe']").all()
-                i = 0
-                for element in elements:
-                    if i > 3:
-                        break
-                    await element.click(timeout=2000)
-                    try:
-                        image = await page.locator("img[jsname='kn3ccd']").get_attribute("src", timeout=3000)
-                        if image is not None:
-                            links.append({"url": image, "title": "image"})
-                            i = i+1
-                    except Exception as e:
-                        print('skipping image')
-                    
-        finally:
-            await browser.close()
+    # soup
+    req = requests.get(googleURL, headers=headers)
+    resp = req.text
 
-        resp = {
-            "error": False,
-            "links": links
-        }
+    bs = BeautifulSoup(resp, features="lxml")
 
-        return json(resp)
+    links = []
+    if images is False:
+        results = bs.select(".MjjYud a[jsname='UWckNb']")
+        for result in results:
+            link = result["href"]
+            title = result.find("h3").text
+            if link is not None:
+                if link.find("/url?") == 0:
+                    link = link.split("&url=")[1].split("&")[0]
+                    link = urllib.parse.unquote_plus(link)
+                links.append({"url": link, "title": title})
+    else:
+        all_script_tags = bs.select("script")
+        matched_images_data = "".join(re.findall(
+            r"AF_initDataCallback\(([^<]+)\);", str(all_script_tags)))
+        matched_images_data_fix = dumps(matched_images_data)
+        matched_images_data_json = loads(matched_images_data_fix)
+        matched_google_image_data = re.findall(
+            r'\"b-GRID_STATE0\"(.*)sideChannel:\s?{}}', matched_images_data_json)
+        removed_matched_google_images_thumbnails = re.sub(
+            r'\[\"(https\:\/\/encrypted-tbn0\.gstatic\.com\/images\?.*?)\",\d+,\d+\]', "", str(matched_google_image_data))
+        matched_google_full_resolution_images = re.findall(
+            r"(?:'|,),\[\"(https:|http.*?)\",\d+,\d+\]", removed_matched_google_images_thumbnails)
+        full_res_images = [
+            bytes(bytes(img, "ascii").decode("unicode-escape"), "ascii").decode("unicode-escape") for img in matched_google_full_resolution_images
+        ]
+
+        for img in full_res_images:
+            links.append({"url": img, "title": ""})
+
+    resp = {
+        "error": False,
+        "links": links[0:10]
+    }
+
+    return json(resp)
 
 
 @app.route("/api/extractImages", methods=["POST"])
