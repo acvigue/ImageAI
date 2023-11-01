@@ -64,7 +64,7 @@ async def googleSearch(request, path=""):
         extra_params = content["extra_params"]
 
     if "images" in content and content["images"] is True:
-        extra_params += "&tbm=isch&tbs=isz:l"
+        extra_params += "&tbm=isch"
         images = True
 
     logger.info('searching for "{}" (images {})'.format(query, images))
